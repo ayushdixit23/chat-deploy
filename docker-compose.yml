@@ -1,0 +1,155 @@
+version: '3.8'
+
+networks:
+  backend:  # Define a shared network
+    driver: bridge
+
+
+services:
+  redis:
+    image: redis:latest
+    container_name: redis-server
+    ports:
+      - "6379:6379"
+    networks:
+      - backend
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq-server
+    hostname: rabbitmq-host
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - backend
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    command: rabbitmq-server
+
+  mongo:
+    image: mongo:latest
+    container_name: mongo-server
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - "27017:27017"
+    networks:
+      - backend
+    volumes:
+      - mongo_data:/data/db
+      - mongo_config:/data/configdb
+
+  login-chat:
+    image: ayushdixit23/login-chat:latest
+    container_name: login-chat-server
+    restart: always
+    depends_on:
+      - mongo
+    environment:
+      PORT: ${PORT_LOGIN_CHAT}
+      MONGO_URI: ${MONGO_URI}
+      NODE_ENV: ${NODE_ENV}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
+      AWS_SECRET_KEY: ${AWS_SECRET_KEY}
+      AWS_REGION: ${AWS_REGION}
+      BUCKET_NAME: ${BUCKET_NAME}
+      CLOUDFRONT_URL: ${CLOUDFRONT_URL}
+    ports:
+      - "${PORT_LOGIN_CHAT}:${PORT_LOGIN_CHAT}"
+    networks:
+      - backend
+
+  chat-rest-server:
+    image: ayushdixit23/chat-rest-server:latest
+    container_name: chat-rest-server
+    restart: always
+    depends_on:
+      - mongo
+    environment:
+      PORT: ${PORT_CHAT_REST}
+      MONGO_URI: ${MONGO_URI}
+      NODE_ENV: ${NODE_ENV}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
+      AWS_SECRET_KEY: ${AWS_SECRET_KEY}
+      AWS_REGION: ${AWS_REGION}
+      BUCKET_NAME: ${BUCKET_NAME}
+      CLOUDFRONT_URL: ${CLOUDFRONT_URL}
+    ports:
+      - "${PORT_CHAT_REST}:${PORT_CHAT_REST}"
+    networks:
+      - backend
+
+  socket-server:
+    image: ayushdixit23/socket-chat:latest
+    container_name: socket-chat
+    restart: always
+    depends_on:
+      - redis
+      - rabbitmq
+    environment:
+      PORT: ${PORT_SOCKET_SERVER}
+      NODE_ENV: ${NODE_ENV}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      AMPQ_URL: ${AMPQ_URL}
+      REDIS_URL: ${REDIS_URL}
+    ports:
+      - "${PORT_SOCKET_SERVER}:${PORT_SOCKET_SERVER}"
+    networks:
+      - backend
+
+  chat-message-broker:
+    image: ayushdixit23/chat-message-broker:latest
+    container_name: chat-message-broker
+    restart: always
+    depends_on:
+      - mongo
+      - rabbitmq
+    entrypoint: /bin/sh -c "until nc -z rabbitmq 5672; do echo 'Waiting for RabbitMQ...'; sleep 2; done; exec node dist/consumer.js"
+    environment:
+      MONGO_URI: ${MONGO_URI}
+      NODE_ENV: ${NODE_ENV}
+      AMPQ_URL: ${AMPQ_URL}
+      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
+      AWS_SECRET_KEY: ${AWS_SECRET_KEY}
+      AWS_REGION: ${AWS_REGION}
+      BUCKET_NAME: ${BUCKET_NAME}
+      CLOUDFRONT_URL: ${CLOUDFRONT_URL}
+    networks:
+      - backend
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: always
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - backend
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: always
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    networks:
+      - backend
+
+
+volumes:
+  mongo_data:
+    driver: local
+  mongo_config:
+    driver: local
+  grafana_data:
+    driver: local
