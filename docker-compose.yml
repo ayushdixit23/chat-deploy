@@ -39,9 +39,11 @@ services:
       - "27017:27017"
     networks:
       - backend
+    # volumes:
+    #   - mongo_data:/data/db
+    #   - mongo_config:/data/configdb
     volumes:
-      - mongo_data:/data/db
-      - mongo_config:/data/configdb
+    - /home/fsayush100/mongo_backup:/data/db
 
   login-chat:
     image: ayushdixit23/login-chat:latest
